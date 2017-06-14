@@ -1,5 +1,5 @@
 import tensorflow as tf
-from ConvGRU import ConvGRUCell
+from cell import ConvGRUCell
 from layers import deconv2d
 from layers import lrelu
 from layers import linear
