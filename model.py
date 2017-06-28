@@ -1,12 +1,13 @@
 import tensorflow as tf
 from cell import ConvGRUCell
+from ConvGRU import ConvGRUCell as ConvGRUCell_1
 from layers import deconv2d
 from layers import lrelu
 from layers import linear
 from layers import conv2d
 import numpy as np
-from ops import *
-from utils import *
+# from ops import *
+# from utils import *
 
 LAMBDA = 10 # Gradient penalty lambda hyperparameter
 lamda = 200 # wights of the function 8 in wgan-gp
@@ -17,90 +18,254 @@ shape = [640, 480]
 kernel = [3, 3]
 channels = 3
 filters = 12
-nlayers = 4
 
-def add_layer(input, state_init=None):
+def add_deconv(input_1, input_2, input_3, input_4):
 
-    #with tf.variable_scope('add_layer'):
+    with tf.variable_scope('fina_layer'):
 
-        cell = ConvGRUCell(shape, filters, kernel, reuse=True)
+        outputs_4 = input_4
 
-        if state_init == None:
-            state_init = cell.zero_state()
-        else:
-            state_init = state_init
+        output_shape_3=[input_4.shape[0], input_4.shape[1]*2, input_4.shape[2]*2, input_4.shape[3]]
+        outputs_3 = lrelu(input_4)
+        outputs_3 = deconv2d(outputs_3, output_shape_3)
+        outputs_3 = lrelu(outputs_3)
+        res_3 = conv2d(input_3, 64, k_h=3, k_w=3, d_h=1, d_w=1)
+        res_3 = tf.nn.relu(res_3)
+        res_3 = conv2d(res_3, output_shape_3[-1], k_h=3, k_w=3, d_h=1, d_w=1)
+        outputs_3 = tf.add(outputs_3, tf.nn.relu(res_3))
+        outputs_3 = lrelu(outputs_3)
 
-        cell_output, cell_state = tf.nn.dynamic_rnn(cell, input, initial_state = state_init, dtype=tf.float32, time_major=True)
+        output_shape_2=[input_3.shape[0], input_3.shape[1]*2, input_3.shape[2]*2, input_3.shape[3]]
+        outputs_2 = lrelu(input_3)
+        outputs_2 = deconv2d(outputs_2, output_shape_2)
+        outputs_2 = lrelu(outputs_2)
+        res_2 = conv2d(input_2, 64, k_h=3, k_w=3, d_h=1, d_w=1)
+        res_2 = tf.nn.relu(res_2)
+        res_2 = conv2d(res_2, output_shape_2[-1], k_h=3, k_w=3, d_h=1, d_w=1)
+        outputs_2 = tf.add(outputs_2, tf.nn.relu(res_2))
+        outputs_2 = lrelu(outputs_2)
 
-        return cell_output, cell_state
+        output_shape_1=[input_2.shape[0], input_2.shape[1]*2, input_2.shape[2]*2, input_2.shape[3]]
+        outputs_1 = lrelu(input_2)
+        outputs_1 = deconv2d(outputs_1, output_shape_1)
+        outputs_1 = lrelu(outputs_1)
+        res_1 = conv2d(input_1, 64, k_h=3, k_w=3, d_h=1, d_w=1)
+        res_1 = tf.nn.relu(res_1)
+        res_1 = conv2d(res_1, output_shape_2[-1], k_h=3, k_w=3, d_h=1, d_w=1)
+        outputs_1 = tf.add(outputs_1, tf.nn.relu(res_1))
+        outputs_1 = lrelu(outputs_1)
 
-def add_output_layer(input):
+        return outputs_1, outputs_2, outputs_3, outputs_4
 
-    outputs = deconv2d(dec_outputs, )
+def gen(input, state_init=None):
 
-    return
+    # with tf.variable_scope('inputs'):
+    #
+    #     xs = tf.placeholder(tf.float32, [self._batch_size, self._time_steps, self._input_size], name='xs')
+    #     ys = tf.placeholder(tf.float32, [self._batch_size, self._time_steps, self._output_size], name='ys')
 
-def gen(input, nlayers, reuse=False):
+    with tf.variable_scope(tf.get_variable_scope()):
 
-    with tf.variable_scope('inputs'):
+        with tf.variable_scope('gen_enc_1'):
+            cell_1 = ConvGRUCell_1(shape[1], filters[1], kernel[1], initializer=tf.truncated_normal_initializer(stddev=0.01))
+            if state_init is None:
+                init = cell_1.zero_state(input.shape[1].value, tf.float32)
+            else:
+                init = state_init[0]
+            output_1, states_1 = tf.nn.dynamic_rnn(cell_1, input,
+                                                   initial_state=init,
+                                                   dtype=tf.float32, time_major=True)
+            output_final_1 = []
+            for i in range(output_1.shape[0].value):
+                output_1_temp = tf.nn.max_pool(output_1[i], ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+                output_final_1.append(output_1_temp)
+            output_final_1 = tf.stack(output_final_1)
 
-        xs = tf.placeholder(tf.float32, [self._batch_size, self._time_steps, self._input_size], name='xs')
-        ys = tf.placeholder(tf.float32, [self._batch_size, self._time_steps, self._output_size], name='ys')
+        with tf.variable_scope('gen_enc_2'):
+            cell_2 = ConvGRUCell(shape[2], filters[2], kernel[2], initializer=tf.truncated_normal_initializer(stddev=0.01))
+            if state_init is None:
+                init_2 = cell_2.zero_state(input.shape[1].value, tf.float32)
+            else:
+                init_2 = state_init[1]
+            output_2, states_2 = tf.nn.dynamic_rnn(cell_2, tf.concat(input[2], output_final_1, 2),
+                                                   initial_state=init_2, dtype=tf.float32,
+                                                   time_major=True)
+            output_final_2 = []
+            for i in range(output_2.shape[0].value):
+                output_2_temp = tf.nn.max_pool(output_2[i], ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+                output_final_1.append(output_2_temp)
+            output_final_2 = tf.stack(output_final_2)
 
-    with tf.name_scope('gen'):
+        with tf.variable_scope('gen_enc_3'):
+            cell_3 = ConvGRUCell(shape[3], filters[3], kernel[3], initializer=tf.truncated_normal_initializer(stddev=0.01))
+            if state_init is None:
+                init_3 = cell_3.zero_state(input.shape[1].value, tf.float32)
+            else:
+                init_3 = state_init[2]
+            output_3, states_3 = tf.nn.dynamic_rnn(cell_3, tf.concat(input[3], output_final_2, 2),
+                                                   initial_state=init_3, dtype=tf.float32,
+                                                   time_major=True)
+            output_final_3 = []
+            for i in range(output_3.shape[0].value):
+                output_3_temp = tf.nn.max_pool(output_3[i], ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
+                output_final_3.append(output_3_temp)
+            output_final_3 = tf.stack(output_final_3)
 
-        with tf.variable_scope('gen_enc'):
+        with tf.variable_scope('gen_enc_4'):
+            cell_4 = ConvGRUCell(shape[4], filters[4], kernel[4], initializer=tf.truncated_normal_initializer(stddev=0.01))
+            if state_init is None:
+                init_4 = cell_4.zero_state(input.shape[1].value, tf.float32)
+            else:
+                init_4 = state_init[3]
+            _, states_4 = tf.nn.dynamic_rnn(cell_4, tf.concat(input[4], output_final_3, 2),
+                                            initial_state=init_4,
+                                            dtype=tf.float32, time_major=True)
 
-            for nl in range(1, nlayers+1):
-
-                if state_prev == None:
-
-                    init = None
-
-                else:
-
-                    init = state_prev
-
-               if nl == 1:
-
-                  output, states = add_layer(xs, state_init=init )
-
-               else:
-
-                  output, states = add_layer(output[nl - 1])
-
-        with tf.variable_scope('gen_dec'):
-
-            for step in range(len(feature_maps)):
+        final_output_1 = []
+        final_output_2 = []
+        final_output_3 = []
+        final_output_4 = []
+        final_state = []
+        for step in range(len(input)):
 
                 if step == 0:
 
-                    for nl in range(nlayers+1):
+                    with tf.variable_scope('gen_dec_1'):
+                         cell_dec_1 = ConvGRUCell_1(shape[1], filters[1], kernel[1])
+                         dec_output_1, dec_states_1 = tf.nn.dynamic_rnn(cell_dec_1, tf.zeros_like(), initial_state=states_1,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_1 = []
+                         for i in range(dec_output_1.shape[0].value):
+                             dec_output_1_temp = tf.nn.max_pool(dec_output_1[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_1.append(dec_output_1_temp)
+                         dec_output_final_1 = tf.stack(dec_output_final_1)
 
-                        with tf.variable_scope('gen_layer'+fix):
+                    with tf.variable_scope('gen_dec_2'):
+                         cell_dec_2 = ConvGRUCell(shape[2], filters[2], kernel[2])
+                         dec_output_2, dec_states_2 = tf.nn.dynamic_rnn(cell_dec_2, tf.concat(tf.zeros_like(), dec_output_final_1,2), initial_state=states_2,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_2 = []
+                         for i in range(dec_output_2.shape[0].value):
+                             dec_output_2_temp = tf.nn.max_pool(dec_output_2[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_2.append(dec_output_2_temp)
+                         dec_output_final_2 = tf.stack(dec_output_final_2)
 
-                            oututput, states = add_layer(tf.zeros_like(), state_init=states[nl], sequence_length=1)
+                    with tf.variable_scope('gen_dec_3'):
+                         cell_dec_3 = ConvGRUCell(shape[3], filters[3], kernel[3])
+                         dec_output_3, dec_states_3 = tf.nn.dynamic_rnn(cell_dec_3, tf.concat(tf.zeros_like(),dec_output_final_2,2), initial_state=states_3,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_3 = []
+                         for i in range(dec_output_3.shape[0].value):
+                             dec_output_3_temp = tf.nn.max_pool(dec_output_3[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_3.append(dec_output_3_temp)
+                         dec_output_final_3 = tf.stack(dec_output_final_3)
+
+                    with tf.variable_scope('gen_dec_4'):
+                         cell_dec_4 = ConvGRUCell(shape[4], filters[4], kernel[4])
+                         dec_output_4, dec_states_4 = tf.nn.dynamic_rnn(cell_dec_4, tf.concat(tf.zeros_like(),dec_output_final_3,2), initial_state=states_4,
+                                                                      dtype=tf.float32, time_major=True)
+
+                    with tf.variable_scope('gen_dec_logits'):
+                         interm_out_1 = []
+                         interm_out_2 = []
+                         interm_out_3 = []
+                         interm_out_4 = []
+                         interm_1, interm_2, interm_3, interm_4 = add_deconv(dec_states_1, dec_states_2, dec_states_3, dec_states_4)
+                         interm_out_1.append(interm_1)
+                         final_output_1.append(interm_out_1)
+                         interm_out_1 = tf.stack(interm_out_1)
+                         interm_out_2.append(interm_2)
+                         final_output_2.append(interm_out_2)
+                         interm_out_2 = tf.stack(interm_out_2)
+                         interm_out_3.append(interm_3)
+                         final_output_3.append(interm_out_3)
+                         interm_out_3 = tf.stack(interm_out_3)
+                         interm_out_4.append(interm_4)
+                         final_output_4.append(interm_out_4)
+                         interm_out_4 = tf.stack(interm_out_4)
 
                 else:
 
-                    for nl in range(nlayers+1):
+                    with tf.variable_scope('gen_dec_1', reuse=True):
+                         cell_dec_1 = ConvGRUCell_1(shape[1], filters[1], kernel[1])
+                         dec_output_1, dec_states_1 = tf.nn.dynamic_rnn(cell_dec_1, interm_out_1, initial_state=dec_states_1,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_1 = []
+                         for i in range(dec_output_1.shape[0].value):
+                             dec_output_1_temp = tf.nn.max_pool(dec_output_1[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_1.append(dec_output_1_temp)
+                         dec_output_final_1 = tf.stack(dec_output_final_1)
 
-                        tf.get_variable_scope().reuse_variables()
+                    with tf.variable_scope('gen_dec_2', reuse=True):
+                         cell_dec_2 = ConvGRUCell(shape[2], filters[2], kernel[2])
+                         dec_output_2, dec_states_2 = tf.nn.dynamic_rnn(cell_dec_2, tf.concat(interm_out_2,dec_output_final_1,2), initial_state=dec_states_2,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_2 = []
+                         for i in range(dec_output_2.shape[0].value):
+                             dec_output_2_temp = tf.nn.max_pool(dec_output_2[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_2.append(dec_output_2_temp)
+                         dec_output_final_2 = tf.stack(dec_output_final_2)
 
-                        output, states = add_layer(output[step][nl], state_init=prev_states[step][nl], sequence_length=1)
+                    with tf.variable_scope('gen_dec_3', reuse=True):
+                         cell_dec_3 = ConvGRUCell(shape[3], filters[3], kernel[3])
+                         dec_output_3, dec_states_3 = tf.nn.dynamic_rnn(cell_dec_3, tf.concat(interm_out_3,dec_output_final_2,2), initial_state=dec_states_3,
+                                                           dtype=tf.float32, time_major=True)
+                         dec_output_final_3 = []
+                         for i in range(dec_output_3.shape[0].value):
+                             dec_output_3_temp = tf.nn.max_pool(dec_output_3[i], ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                                   padding='SAME')
+                             dec_output_final_3.append(dec_output_3_temp)
+                         dec_output_final_3 = tf.stack(dec_output_final_3)
 
-    return output, states
+                    with tf.variable_scope('gen_dec_4', reuse=True):
+                         cell_dec_4 = ConvGRUCell(shape[4], filters[4], kernel[4])
+                         dec_output_4, dec_states_4 = tf.nn.dynamic_rnn(cell_dec_4, tf.concat(interm_out_4,dec_output_final_3,2), initial_state=dec_states_4,
+                                                                        dtype=tf.float32, time_major=True)
+
+                    with tf.variable_scope('gen_dec_logits', reuse=True):
+                         interm_out_1 = []
+                         interm_out_2 = []
+                         interm_out_3 = []
+                         interm_out_4 = []
+                         interm_1, interm_2, interm_3, interm_4 = add_deconv(dec_states_1, dec_states_2, dec_states_3, dec_states_4)
+                         interm_out_1.append(interm_1)
+                         final_output_1.append(interm_out_1)
+                         interm_out_1 = tf.stack(interm_out_1)
+                         interm_out_2.append(interm_2)
+                         final_output_2.append(interm_out_2)
+                         interm_out_2 = tf.stack(interm_out_2)
+                         interm_out_3.append(interm_3)
+                         final_output_3.append(interm_out_3)
+                         interm_out_3 = tf.stack(interm_out_3)
+                         interm_out_4.append(interm_4)
+                         final_output_4.append(interm_out_4)
+                         interm_out_4 = tf.stack(interm_out_4)
+
+                    if step == len(input):
+                         final_state.append(dec_states_1)
+                         final_state.append(dec_states_1)
+                         final_state.append(dec_states_1)
+                         final_state.append(dec_states_1)
+
+        final_output_1 = tf.stack(final_output_1)
+        final_output_2 = tf.stack(final_output_2)
+        final_output_3 = tf.stack(final_output_3)
+        final_output_4 = tf.stack(final_output_4)
+        final_state = tf.stack(final_state)
+
+    return final_output_1, final_output_2, final_output_3, final_output_4, final_state
 
 
-def disc(inputs,  reuse=False):
+def disc(inputs):
 
-    with tf.name_scope('disc'):
+    #with tf.name_scope('disc'):
 
-        with tf.variable_scope(tf.get_variable_scope()) as scope:
-             if reuse:
-                scope.reuse_variables()
-             else:
-                assert scope.reuse == False
+        with tf.variable_scope('disc'):
 
              h0 = lrelu(conv2d(image, self.df_dim, name=prefix+'d_h0_conv'))
             # h0 is (128 x 128 x self.df_dim)
@@ -114,27 +279,51 @@ def disc(inputs,  reuse=False):
 
              return h4
 
-def pred_gen(seq,  reuse = False):
-    return gen(seq)
+with tf.variable_scope('pred'):
+    pred_1, pred_2, pred_3, pred_4, pred_state = gen(inputs)
 
-def pred_disc(dec_outputs, reuse = False):
-    return disc()
+with tf.variable_scope('recon'):
+    recon, _, _, _, _ = gen(pred, state_init=pred_state)
+#
+# def pred_gen(seq):
+#
+#     with tf.variable_scope('pred_gen'):
+#
+#         return gen(seq)
+#
+# def pred_disc(dec_outputs:
+#
+#     with tf.name_scope('pred_disc'):
+#
+#     #with tf.variable_scope('p_disc'):
+#
+#         return disc(input, reuse=None)
+#
+# # loss
+# hidd_pred, gen_pred = pred_gen(feature_maps)
+# disc_pred = pred_disc(gen_pred)
+#
+# def recon_gen(, state_init=None):
+#
+#     with tf.name_scope('recon_gen'):
+#
+#     #with tf.variable_scope('re_gen'):
+#
+#         return gen(seq, reuse=None)
+#
+# def recon_disc(, reuse = False):
+#
+#     with tf.name_scope('recon_disc'):
+#
+#     #with tf.variable_scope('re_disc'):
+#
+#         return disc(input, reuse=None)
+#
+# _, gen_recon = recon_gen(dec_outputs, hidden_pred) # remember here is hidden_pred_reversed
+# disc_recon = recon_disc(gen_recon)
 
-# loss
-hidd_pred, gen_pred = pred_gen(feature_maps)
-disc_pred = pred_disc(gen_pred)
-
-def recon_gen(, state_init, reuse = False):
-    return gen()
-
-def recon_disc(, state_init, reuse = False):
-    return disc()
-
-_, gen_recon = recon_gen(dec_outputs, hidden_pred) # remember here is hidden_pred_reversed
-disc_recon = recon_disc(gen_recon)
-
-loss_pre = tf.reduce_mean(-pred_disc(gen_pred) ) + tf.reduce_mean(pred_disc(gt), reuse = True) + lamda * tf.reduce_mean(tf.abs(gen_recon - fw_inputs))# FW_G_output))
-loss_disc = tf.reduce_mean(-recon_disc(gen_recon)) + tf.reduce_mean(recon_disc(inputs), reuse = True)
+loss_pre = tf.reduce_mean(-disc(pred_1) ) + tf.reduce_mean(disc(gt) + lamda * tf.reduce_mean(tf.abs(recon - inputs))# FW_G_output))
+loss_disc = tf.reduce_mean(-recon_disc(gen_recon)) + tf.reduce_mean(recon_disc(inputs, reuse=True))
 
 ## define trainable variables
 t_vars = tf.trainable_variables()
@@ -163,6 +352,20 @@ loss += LAMBDA*gradient_penalty
 gen_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(loss_pre, var_list = g_vars)
 disc_train_op = tf.train.RMSPropOptimizer(learning_rate=5e-5).minimize(loss_disc, var_list = d_vars)
 
+# def add_layer(input, state_init=None):
+#
+#     #with tf.variable_scope('add_layer'):
+#
+#         cell = ConvGRUCell(shape, filters, kernel, reuse=True)
+#
+#         if state_init == None:
+#             state_init = cell.zero_state()
+#         else:
+#             state_init = state_init
+#
+#         cell_output, cell_state = tf.nn.dynamic_rnn(cell, input, initial_state = state_init, dtype=tf.float32, time_major=True)
+#
+#         return cell_output, cell_state
 
         # enc_cell = ConvGRUCell(shape[nl], filters[nl], kernel[nl])
         #
